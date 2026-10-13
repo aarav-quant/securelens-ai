@@ -1,0 +1,226 @@
+# SecureLens AI — local Semgrep rules for JavaScript, TypeScript (incl. JSX/TSX) and Java.
+# Kept local and explicit so scans work offline and results are reproducible.
+# Severity: ERROR -> HIGH, WARNING -> MEDIUM, INFO -> LOW. metadata.confidence feeds prioritization.
+
+rules:
+  # ---------------- JavaScript / TypeScript ----------------
+  - id: js-eval-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: eval() runs a string as code. If any part comes from user input, attackers can run arbitrary JavaScript.
+    patterns:
+      - pattern: eval($X)
+      - pattern-not: eval("...")
+    metadata: {title: "Code injection via eval()", cwe: "CWE-95", confidence: HIGH}
+
+  - id: js-function-constructor
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: new Function() compiles a string into code, which is equivalent to eval().
+    patterns:
+      - pattern: new Function(...)
+      - pattern-not: new Function("...")
+    metadata: {title: "Code injection via Function constructor", cwe: "CWE-95", confidence: MEDIUM}
+
+  - id: js-command-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: A shell command is built from a non-constant value. Use execFile/spawn with an argument array and validate input.
+    patterns:
+      - pattern-either:
+          - pattern: $CP.exec($CMD, ...)
+          - pattern: $CP.execSync($CMD, ...)
+      - metavariable-pattern:
+          metavariable: $CMD
+          patterns:
+            - pattern-not: '"..."'
+      - metavariable-regex:
+          metavariable: $CP
+          regex: ^(child_process|cp|childProcess|proc)$
+    metadata: {title: "OS command injection", cwe: "CWE-78", confidence: MEDIUM}
+
+  - id: js-command-injection-bare
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: A shell command is built from a non-constant value. Use execFile/spawn with an argument array and validate input.
+    patterns:
+      - pattern-either:
+          - pattern: exec($CMD, ...)
+          - pattern: execSync($CMD, ...)
+      - pattern-not: exec("...", ...)
+      - pattern-not: execSync("...", ...)
+    metadata: {title: "OS command injection", cwe: "CWE-78", confidence: MEDIUM}
+
+  - id: js-sql-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: SQL is built with string concatenation or a template literal. Use parameterized queries (placeholders).
+    patterns:
+      - pattern: $DB.$EXEC($ARG, ...)
+      - metavariable-regex: {metavariable: $EXEC, regex: ^(query|execute|raw)$}
+      - metavariable-pattern:
+          metavariable: $ARG
+          pattern-either:
+            - pattern: '"..." + $X'
+            - pattern: '`...${$X}...`'
+    metadata: {title: "SQL injection", cwe: "CWE-89", confidence: HIGH}
+
+  - id: js-innerhtml-xss
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Assigning dynamic content to innerHTML/outerHTML can cause XSS. Use textContent or sanitize with DOMPurify.
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = $X
+          - pattern: $EL.outerHTML = $X
+      - pattern-not: $EL.innerHTML = "..."
+      - pattern-not: $EL.outerHTML = "..."
+    metadata: {title: "DOM XSS via innerHTML", cwe: "CWE-79", confidence: MEDIUM}
+
+  - id: js-document-write
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: document.write() with dynamic content can cause XSS.
+    patterns:
+      - pattern: document.write($X)
+      - pattern-not: document.write("...")
+    metadata: {title: "DOM XSS via document.write", cwe: "CWE-79", confidence: MEDIUM}
+
+  - id: react-dangerously-set-inner-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: dangerouslySetInnerHTML bypasses React's escaping. Sanitize the HTML first or render text instead.
+    pattern: <$EL dangerouslySetInnerHTML={$X} />
+    metadata: {title: "React XSS via dangerouslySetInnerHTML", cwe: "CWE-79", confidence: MEDIUM}
+
+  - id: js-hardcoded-secret
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: A credential appears to be hardcoded. Load secrets from environment variables or a secret manager.
+    patterns:
+      - pattern-either:
+          - pattern: $K = "$V"
+          - pattern: '{..., $K: "$V", ...}'
+      - metavariable-regex:
+          metavariable: $K
+          regex: (?i).*(password|passwd|secret|api_?key|access_?token|auth_?token|private_?key).*
+      - metavariable-regex:
+          metavariable: $V
+          regex: ^.{4,}$
+    metadata: {title: "Hardcoded secret", cwe: "CWE-798", confidence: MEDIUM}
+
+  - id: js-weak-hash
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: MD5 and SHA-1 are broken for security purposes. Use SHA-256+ (or bcrypt/argon2 for passwords).
+    pattern-either:
+      - pattern: $C.createHash("md5")
+      - pattern: $C.createHash("sha1")
+    metadata: {title: "Weak hash algorithm", cwe: "CWE-328", confidence: HIGH}
+
+  - id: js-insecure-random
+    languages: [javascript, typescript]
+    severity: INFO
+    message: Math.random() is not cryptographically secure. Use crypto.randomBytes / crypto.getRandomValues for tokens or IDs.
+    pattern: Math.random()
+    metadata: {title: "Insecure randomness", cwe: "CWE-338", confidence: LOW}
+
+  # ---------------- Java ----------------
+  - id: java-command-injection
+    languages: [java]
+    severity: ERROR
+    message: Runtime.exec() is called with a non-constant command. Validate input and pass a fixed argument array.
+    patterns:
+      - pattern: Runtime.getRuntime().exec($X)
+      - pattern-not: Runtime.getRuntime().exec("...")
+    metadata: {title: "OS command injection", cwe: "CWE-78", confidence: HIGH}
+
+  - id: java-sql-injection
+    languages: [java]
+    severity: ERROR
+    message: SQL is built with string concatenation. Use PreparedStatement with ? placeholders.
+    patterns:
+      - pattern: $S.$EXEC($ARG, ...)
+      - metavariable-regex: {metavariable: $EXEC, regex: ^(executeQuery|executeUpdate|execute|addBatch|prepareStatement)$}
+      - metavariable-pattern:
+          metavariable: $ARG
+          pattern-either:
+            - pattern: '"..." + $X'
+            - pattern: String.format(...)
+    metadata: {title: "SQL injection", cwe: "CWE-89", confidence: HIGH}
+
+  - id: java-sql-injection-var
+    languages: [java]
+    severity: ERROR
+    message: A SQL string built by concatenation is executed. Use PreparedStatement with ? placeholders.
+    patterns:
+      - pattern-inside: |
+          String $Q = "..." + $X;
+          ...
+      - pattern: $S.$EXEC($Q)
+      - metavariable-regex:
+          metavariable: $EXEC
+          regex: ^(executeQuery|executeUpdate|execute|addBatch)$
+    metadata: {title: "SQL injection", cwe: "CWE-89", confidence: HIGH}
+
+  - id: java-weak-hash
+    languages: [java]
+    severity: WARNING
+    message: MD5 and SHA-1 are broken for security purposes. Use SHA-256 or stronger.
+    patterns:
+      - pattern: MessageDigest.getInstance("$ALG")
+      - metavariable-regex:
+          metavariable: $ALG
+          regex: (?i)^(md5|md2|sha-?1)$
+    metadata: {title: "Weak hash algorithm", cwe: "CWE-328", confidence: HIGH}
+
+  - id: java-weak-cipher
+    languages: [java]
+    severity: WARNING
+    message: DES/3DES/RC4 or ECB mode is insecure. Use AES/GCM/NoPadding.
+    patterns:
+      - pattern: Cipher.getInstance("$ALG")
+      - metavariable-regex:
+          metavariable: $ALG
+          regex: (?i)^(des|desede|rc4|aes|.*/ecb/.*|des/.*|desede/.*)$
+    metadata: {title: "Weak cipher or ECB mode", cwe: "CWE-327", confidence: HIGH}
+
+  - id: java-insecure-deserialization
+    languages: [java]
+    severity: ERROR
+    message: Java native deserialization of untrusted data can lead to remote code execution. Prefer JSON or use an ObjectInputFilter allow-list.
+    pattern: new ObjectInputStream(...).readObject()
+    metadata: {title: "Insecure deserialization", cwe: "CWE-502", confidence: MEDIUM}
+
+  - id: java-insecure-deserialization-var
+    languages: [java]
+    severity: ERROR
+    message: Java native deserialization of untrusted data can lead to remote code execution. Prefer JSON or use an ObjectInputFilter allow-list.
+    pattern: |
+      $T $O = new ObjectInputStream(...);
+      ...
+      $O.readObject();
+    metadata: {title: "Insecure deserialization", cwe: "CWE-502", confidence: MEDIUM}
+
+  - id: java-hardcoded-secret
+    languages: [java]
+    severity: ERROR
+    message: A credential appears to be hardcoded. Load secrets from environment variables or a vault.
+    patterns:
+      - pattern-either:
+          - pattern: String $K = "$V";
+          - pattern: $K = "$V";
+      - metavariable-regex:
+          metavariable: $K
+          regex: (?i).*(password|passwd|secret|api_?key|access_?token|private_?key).*
+      - metavariable-regex:
+          metavariable: $V
+          regex: ^.{4,}$
+    metadata: {title: "Hardcoded secret", cwe: "CWE-798", confidence: MEDIUM}
+
+  - id: java-insecure-random
+    languages: [java]
+    severity: INFO
+    message: java.util.Random is predictable. Use java.security.SecureRandom for tokens, passwords or keys.
+    pattern: new java.util.Random(...)
+    metadata: {title: "Insecure randomness", cwe: "CWE-338", confidence: LOW}

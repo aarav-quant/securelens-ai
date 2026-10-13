@@ -1,0 +1,9 @@
+# Runtime dependencies for the Vercel Python function (api/index.py).
+# Keep in sync with backend/requirements.txt (which also has the test tools).
+fastapi==0.143.0
+python-multipart==0.0.32
+pydantic==2.14.1
+python-dotenv==1.2.4
+google-genai==2.30.1
+bandit==1.9.4
+semgrep==1.79.0

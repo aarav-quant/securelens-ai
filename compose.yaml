@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: ./backend
+    env_file:
+      - path: ./backend/.env       # holds GEMINI_API_KEY; optional
+        required: false
+    environment:
+      TRUST_PROXY: "true"          # requests arrive through Nginx
+      CORS_ORIGINS: "http://localhost:8080"
+    expose:
+      - "8000"                     # only reachable by the frontend container
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
