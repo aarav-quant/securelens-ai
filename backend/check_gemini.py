@@ -12,7 +12,7 @@ if not settings.gemini_api_key:
 
 client = genai.Client(api_key=settings.gemini_api_key,
                       http_options=types.HttpOptions(timeout=60_000))
-models = [settings.gemini_model, settings.gemini_fallback_model]
+models = [settings.gemini_model, *settings.gemini_fallback_models]
 for model in models:
     for name, cfg in {"app-settings": types.GenerateContentConfig(thinking_config=thinking_for(model))}.items():
         t = time.time()

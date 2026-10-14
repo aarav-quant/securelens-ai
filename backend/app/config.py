@@ -18,7 +18,14 @@ def _int(name: str, default: int) -> int:
 class Settings:
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "").strip()
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite").strip()
-    gemini_fallback_model: str = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash").strip()
+    # Comma-separated, tried in order when the main model is busy.
+    gemini_fallback_models: list[str] = [
+        m.strip()
+        for m in os.getenv(
+            "GEMINI_FALLBACK_MODEL", "gemini-3.6-flash,gemini-flash-lite-latest,gemini-3.5-flash-lite"
+        ).split(",")
+        if m.strip()
+    ]
     gemini_timeout_seconds: int = _int("GEMINI_TIMEOUT_SECONDS", 90)
 
     max_upload_bytes: int = _int("MAX_UPLOAD_BYTES", 500_000)        # 500 KB

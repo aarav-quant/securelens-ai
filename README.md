@@ -142,10 +142,11 @@ Python packages; 2 GB memory, up to 120 s per request, see `vercel.json`).
 | Docker images build | `docker compose build` (the self-hosting path still works) |
 | Deploy | Only if all three pass: production deploy on `main`, preview deploy on PRs |
 
-Vercel's own Git auto-deploy is turned off (`"git": {"deploymentEnabled": false}`), so nothing is deployed
-unless the tests pass.
+Vercel's Git integration also deploys every push to `main` automatically. If you want deployments to happen
+**only** after CI passes, add `"git": {"deploymentEnabled": false}` to `vercel.json` and set up the three
+secrets below so the Deploy job takes over.
 
-### One-time setup
+### Optional: deploy from GitHub Actions instead
 
 1. **Create the Vercel project**: vercel.com → *Add New → Project* → import this GitHub repo →
    keep the defaults (settings come from `vercel.json`) → Deploy.

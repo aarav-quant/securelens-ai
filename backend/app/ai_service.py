@@ -114,19 +114,19 @@ def analyze_findings(language: str, findings: list[Finding]) -> dict[str, dict]:
         temperature=0.2,
     )
     prompt = build_prompt(language, findings)
-    # Try the main model (with one retry), then the fallback model, on temporary
-    # errors only: 429 rate limit / 500 / 503 "high demand".
-    models = [settings.gemini_model]
-    if settings.gemini_fallback_model and settings.gemini_fallback_model != settings.gemini_model:
-        models.append(settings.gemini_fallback_model)
+    # Try the main model (one retry), then each fallback model once, on temporary errors:
+    # 429 rate limit / 500 / 503 "high demand" / 504 timeout. A fallback that is not
+    # available to this key (404) is skipped. Auth/bad-request errors stop immediately.
+    models = [settings.gemini_model] + [m for m in settings.gemini_fallback_models if m != settings.gemini_model]
 
     # Keep a reference to the client for the whole call: if it is garbage-collected
     # early, google-genai closes its HTTP connection ("client has been closed").
     client = _client()
     response, last_exc = None, None
     try:
-        for model in models:
-            for attempt in range(2):
+        for index, model in enumerate(models):
+            attempts = 2 if index == 0 else 1
+            for attempt in range(attempts):
                 try:
                     cfg = config.model_copy(update={"thinking_config": thinking_for(model)})
                     response = client.models.generate_content(model=model, contents=prompt, config=cfg)
@@ -134,12 +134,15 @@ def analyze_findings(language: str, findings: list[Finding]) -> dict[str, dict]:
                 except Exception as exc:  # network, auth, quota, model-name errors…
                     last_exc = exc
                     code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+                    if code == 404 and index > 0:
+                        _describe(exc)  # fallback model not available to this key: try the next one
+                        break
                     if code not in TRANSIENT_CODES:
                         raise AIFailure(f"Gemini request failed: {_describe(exc)}") from exc
                     _describe(exc)  # log it
                     if code in NO_RETRY_SAME_MODEL:
                         break
-                    if attempt == 0:
+                    if attempt + 1 < attempts:
                         time.sleep(RETRY_DELAY_SECONDS)
             if response is not None:
                 break

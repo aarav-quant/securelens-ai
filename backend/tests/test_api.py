@@ -263,7 +263,7 @@ def test_report_endpoint_html_and_json():
 def test_analyze_retries_then_falls_back_on_503(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
     monkeypatch.setattr(settings, "gemini_model", "main-model")
-    monkeypatch.setattr(settings, "gemini_fallback_model", "backup-model")
+    monkeypatch.setattr(settings, "gemini_fallback_models", ["backup-model"])
     monkeypatch.setattr(ai_service, "RETRY_DELAY_SECONDS", 0)
     calls = []
     ok = SimpleNamespace(parsed=[ai_service.AIExplanation(finding_id="S1", explanation="e", impact="i", remediation="r")], text="")
@@ -297,3 +297,30 @@ def test_analyze_does_not_retry_auth_errors(monkeypatch):
                         lambda: SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)))
     r = client.post("/api/analyze", json=analyze_payload())
     assert r.status_code == 502 and "403" in r.json()["error"]["message"] and len(calls) == 1
+
+
+def test_analyze_walks_fallback_list(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    monkeypatch.setattr(settings, "gemini_model", "main")
+    monkeypatch.setattr(settings, "gemini_fallback_models", ["gone", "busy", "ok"])
+    monkeypatch.setattr(ai_service, "RETRY_DELAY_SECONDS", 0)
+    calls = []
+    ok = SimpleNamespace(parsed=[ai_service.AIExplanation(finding_id="S1", explanation="e", impact="i", remediation="r")], text="")
+
+    def err(code):
+        e = Exception(f"error {code}")
+        e.code = code
+        return e
+
+    def generate_content(model, **kwargs):
+        calls.append(model)
+        if model == "main" or model == "busy":
+            raise err(503)
+        if model == "gone":
+            raise err(404)
+        return ok
+    monkeypatch.setattr(ai_service, "_client",
+                        lambda: SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)))
+    r = client.post("/api/analyze", json=analyze_payload())
+    assert r.status_code == 200
+    assert calls == ["main", "main", "gone", "busy", "ok"]
